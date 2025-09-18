@@ -346,6 +346,7 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
   } else if (Subtarget.is64Bit()) {
     setOperationAction(ISD::MUL, MVT::i128, Custom);
     setOperationAction(ISD::MUL, MVT::i32, Custom);
+    setOperationAction(ISD::MULHU, MVT::i64, Custom);
   } else {
     setOperationAction(ISD::MUL, MVT::i64, Custom);
   }
@@ -8279,6 +8280,7 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
   case ISD::MUL:
   case ISD::MULHS:
   case ISD::MULHU:
+    return lowerMULHU(Op, DAG);
   case ISD::AND:
   case ISD::OR:
   case ISD::XOR:
@@ -13158,6 +13160,62 @@ SDValue RISCVTargetLowering::lowerABS(SDValue Op, SelectionDAG &DAG) const {
   if (VT.isFixedLengthVector())
     Max = convertFromScalableVector(VT, Max, DAG, Subtarget);
   return Max;
+}
+
+// SDValue RISCVTargetLowering::lowerMULHU(SDValue Op, SelectionDAG &DAG) const {
+//   SDLoc DL(Op);
+//   EVT VT = Op.getValueType();
+
+//   assert(VT == MVT::i64 && "Only handing 64-bit MULHU");
+
+//   // library call to __mulhu64_soft
+//   SDValue Ops[] = {Op.getOperand(0), Op.getOperand(1)};
+//   TargetLowering::CallLoweringInfo CLI(DAG);
+//   CLI.setDebugLoc(DL)
+//      .setChain(DAG.getEntryNode())
+//      .setLibCallee(CallingConv::C, VT,
+//                    DAG.getExternalSymbol("__mulhu64_soft", VT),
+//                    ArrayRef(Ops));
+
+//   auto [Chain, Result] = LowerCallTo(CLI);
+//   return Result;
+// }
+
+SDValue RISCVTargetLowering::lowerMULHU(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  assert(VT == MVT::i64 && "Only handling 64-bit MULHU");
+
+  TargetLowering::ArgListTy Args;
+  
+  SDValue Op0 = Op.getOperand(0);
+  Type *Ty0 = Op0.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry0(Op0, Ty0);
+  Entry0.IsSExt = false;
+  Entry0.IsZExt = true;
+  Args.push_back(Entry0);
+  
+  // Second operand
+  SDValue Op1 = Op.getOperand(1);
+  Type *Ty1 = Op1.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry1(Op1, Ty1);
+  Entry1.IsSExt = false;
+  Entry1.IsZExt = true;
+  Args.push_back(Entry1);
+
+  SDValue Callee = DAG.getExternalSymbol("__mulhu64_soft", 
+                                        getPointerTy(DAG.getDataLayout()));
+
+  Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
+
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(DL)
+     .setChain(DAG.getEntryNode())
+     .setLibCallee(CallingConv::C, RetTy, Callee, std::move(Args));
+
+  std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+  return CallResult.first;
 }
 
 SDValue RISCVTargetLowering::lowerToScalableOp(SDValue Op,
