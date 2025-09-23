@@ -347,6 +347,7 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::MUL, MVT::i128, Custom);
     setOperationAction(ISD::MUL, MVT::i32, Custom);
     setOperationAction(ISD::MULHU, MVT::i64, Custom);
+    setOperationAction(ISD::MULHS, MVT::i64, Custom);
   } else {
     setOperationAction(ISD::MUL, MVT::i64, Custom);
   }
@@ -8279,6 +8280,7 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
   case ISD::SUB:
   case ISD::MUL:
   case ISD::MULHS:
+    return lowerMULHS(Op, DAG);
   case ISD::MULHU:
     return lowerMULHU(Op, DAG);
   case ISD::AND:
@@ -13162,25 +13164,6 @@ SDValue RISCVTargetLowering::lowerABS(SDValue Op, SelectionDAG &DAG) const {
   return Max;
 }
 
-// SDValue RISCVTargetLowering::lowerMULHU(SDValue Op, SelectionDAG &DAG) const {
-//   SDLoc DL(Op);
-//   EVT VT = Op.getValueType();
-
-//   assert(VT == MVT::i64 && "Only handing 64-bit MULHU");
-
-//   // library call to __mulhu64_soft
-//   SDValue Ops[] = {Op.getOperand(0), Op.getOperand(1)};
-//   TargetLowering::CallLoweringInfo CLI(DAG);
-//   CLI.setDebugLoc(DL)
-//      .setChain(DAG.getEntryNode())
-//      .setLibCallee(CallingConv::C, VT,
-//                    DAG.getExternalSymbol("__mulhu64_soft", VT),
-//                    ArrayRef(Ops));
-
-//   auto [Chain, Result] = LowerCallTo(CLI);
-//   return Result;
-// }
-
 SDValue RISCVTargetLowering::lowerMULHU(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
   EVT VT = Op.getValueType();
@@ -13209,6 +13192,38 @@ SDValue RISCVTargetLowering::lowerMULHU(SDValue Op, SelectionDAG &DAG) const {
 
   Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
 
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(DL)
+     .setChain(DAG.getEntryNode())
+     .setLibCallee(CallingConv::C, RetTy, Callee, std::move(Args));
+
+  std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+  return CallResult.first;
+}
+
+SDValue RISCVTargetLowering::lowerMULHS(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  assert(VT == MVT::i64 && "Only handling 64-bit MULHS");
+
+  TargetLowering::ArgListTy Args;
+  SDValue Op0 = Op.getOperand(0);
+  Type *Ty0 = Op0.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry0(Op0, Ty0);
+  Entry0.IsSExt = true;
+  Args.push_back(Entry0);
+
+  SDValue Op1 = Op.getOperand(1);
+  Type *Ty1 = Op1.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry1(Op1, Ty1);
+  Entry1.IsSExt = true;
+  Args.push_back(Entry1);
+
+  SDValue Callee = DAG.getExternalSymbol("__mulh64_soft",
+                                         getPointerTy(DAG.getDataLayout()));
+
+  Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(DL)
      .setChain(DAG.getEntryNode())
