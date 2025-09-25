@@ -6,6 +6,8 @@ extern "C" {
 #endif
 
 unsigned long long __mulhu64_soft(unsigned long long a, unsigned long long b);
+unsigned long long __mulhsu64_soft(unsigned long long a, unsigned long long b);
+unsigned long long __mulh64_soft(unsigned long long a, unsigned long long b);
 
 #ifdef __cplusplus
 }
