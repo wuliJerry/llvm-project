@@ -7481,8 +7481,13 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
     }
     return SDValue();
   }
-  case ISD::INTRINSIC_WO_CHAIN:
+  case ISD::INTRINSIC_WO_CHAIN: {
+    unsigned IntNo = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
+    if (IntNo == Intrinsic::riscv_mulhsu) {
+      return lowerMULHSU(Op, DAG);
+    }
     return LowerINTRINSIC_WO_CHAIN(Op, DAG);
+  }
   case ISD::INTRINSIC_W_CHAIN:
     return LowerINTRINSIC_W_CHAIN(Op, DAG);
   case ISD::INTRINSIC_VOID:
@@ -13224,6 +13229,44 @@ SDValue RISCVTargetLowering::lowerMULHS(SDValue Op, SelectionDAG &DAG) const {
                                          getPointerTy(DAG.getDataLayout()));
 
   Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(DL)
+     .setChain(DAG.getEntryNode())
+     .setLibCallee(CallingConv::C, RetTy, Callee, std::move(Args));
+
+  std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+  return CallResult.first;
+}
+
+SDValue RISCVTargetLowering::lowerMULHSU(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  assert(VT == MVT::i64 && "Only handling 64-bit MULHSU");
+
+  TargetLowering::ArgListTy Args;
+
+  // First operand (signed)
+  SDValue Op0 = Op.getOperand(1);  // Intrinsic operands start after the ID (Op.getOperand(0) is the intrinsic ID)
+  Type *Ty0 = Op0.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry0(Op0, Ty0);
+  Entry0.IsSExt = true;
+  Entry0.IsZExt = false;
+  Args.push_back(Entry0);
+
+  // Second operand (unsigned)
+  SDValue Op1 = Op.getOperand(2);
+  Type *Ty1 = Op1.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry1(Op1, Ty1);
+  Entry1.IsSExt = false;
+  Entry1.IsZExt = true;
+  Args.push_back(Entry1);
+
+  SDValue Callee = DAG.getExternalSymbol("__mulhsu64_soft",
+                                        getPointerTy(DAG.getDataLayout()));
+
+  Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
+
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(DL)
      .setChain(DAG.getEntryNode())
