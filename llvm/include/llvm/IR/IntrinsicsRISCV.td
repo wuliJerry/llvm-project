@@ -92,6 +92,11 @@ let TargetPrefix = "riscv" in {
   // Zbkx
   def int_riscv_xperm4  : RISCVBitManipGPRGPRIntrinsics;
   def int_riscv_xperm8  : RISCVBitManipGPRGPRIntrinsics;
+
+  // M Extension (Multiply/Divide)
+  def int_riscv_mulhsu : Intrinsic<[llvm_i64_ty], 
+                                   [llvm_i64_ty, llvm_i64_ty], 
+                                   [IntrNoMem, IntrWillReturn]>;
 } // TargetPrefix = "riscv"
 
 //===----------------------------------------------------------------------===//

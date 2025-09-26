@@ -346,6 +346,8 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
   } else if (Subtarget.is64Bit()) {
     setOperationAction(ISD::MUL, MVT::i128, Custom);
     setOperationAction(ISD::MUL, MVT::i32, Custom);
+    setOperationAction(ISD::MULHU, MVT::i64, Custom);
+    setOperationAction(ISD::MULHS, MVT::i64, Custom);
   } else {
     setOperationAction(ISD::MUL, MVT::i64, Custom);
   }
@@ -7502,8 +7504,15 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
     }
     return SDValue();
   }
-  case ISD::INTRINSIC_WO_CHAIN:
+  case ISD::INTRINSIC_WO_CHAIN: {
+    unsigned IntNo = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
+    if (IntNo == Intrinsic::riscv_mulhsu) {
+      if (!Subtarget.hasStdExtM() && !Subtarget.hasStdExtZmmul())
+        return lowerMULHSU(Op, DAG);
+      return SDValue();
+    }
     return LowerINTRINSIC_WO_CHAIN(Op, DAG);
+  }
   case ISD::INTRINSIC_W_CHAIN:
     return LowerINTRINSIC_W_CHAIN(Op, DAG);
   case ISD::INTRINSIC_VOID:
@@ -8301,7 +8310,9 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
   case ISD::SUB:
   case ISD::MUL:
   case ISD::MULHS:
+    return lowerMULHS(Op, DAG);
   case ISD::MULHU:
+    return lowerMULHU(Op, DAG);
   case ISD::AND:
   case ISD::OR:
   case ISD::XOR:
@@ -13193,6 +13204,113 @@ SDValue RISCVTargetLowering::lowerABS(SDValue Op, SelectionDAG &DAG) const {
   if (VT.isFixedLengthVector())
     Max = convertFromScalableVector(VT, Max, DAG, Subtarget);
   return Max;
+}
+
+SDValue RISCVTargetLowering::lowerMULHU(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  assert(VT == MVT::i64 && "Only handling 64-bit MULHU");
+
+  TargetLowering::ArgListTy Args;
+  
+  SDValue Op0 = Op.getOperand(0);
+  Type *Ty0 = Op0.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry0(Op0, Ty0);
+  Entry0.IsSExt = false;
+  Entry0.IsZExt = true;
+  Args.push_back(Entry0);
+  
+  // Second operand
+  SDValue Op1 = Op.getOperand(1);
+  Type *Ty1 = Op1.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry1(Op1, Ty1);
+  Entry1.IsSExt = false;
+  Entry1.IsZExt = true;
+  Args.push_back(Entry1);
+
+  SDValue Callee = DAG.getExternalSymbol("__mulhu64_soft", 
+                                        getPointerTy(DAG.getDataLayout()));
+
+  Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
+
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(DL)
+     .setChain(DAG.getEntryNode())
+     .setLibCallee(CallingConv::C, RetTy, Callee, std::move(Args));
+
+  std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+  return CallResult.first;
+}
+
+SDValue RISCVTargetLowering::lowerMULHS(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  assert(VT == MVT::i64 && "Only handling 64-bit MULHS");
+
+  TargetLowering::ArgListTy Args;
+  SDValue Op0 = Op.getOperand(0);
+  Type *Ty0 = Op0.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry0(Op0, Ty0);
+  Entry0.IsSExt = true;
+  Args.push_back(Entry0);
+
+  SDValue Op1 = Op.getOperand(1);
+  Type *Ty1 = Op1.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry1(Op1, Ty1);
+  Entry1.IsSExt = true;
+  Args.push_back(Entry1);
+
+  SDValue Callee = DAG.getExternalSymbol("__mulh64_soft",
+                                         getPointerTy(DAG.getDataLayout()));
+
+  Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(DL)
+     .setChain(DAG.getEntryNode())
+     .setLibCallee(CallingConv::C, RetTy, Callee, std::move(Args));
+
+  std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+  return CallResult.first;
+}
+
+SDValue RISCVTargetLowering::lowerMULHSU(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  assert(VT == MVT::i64 && "Only handling 64-bit MULHSU");
+
+  TargetLowering::ArgListTy Args;
+
+  // First operand (signed)
+  SDValue Op0 = Op.getOperand(1);  // Intrinsic operands start after the ID (Op.getOperand(0) is the intrinsic ID)
+  Type *Ty0 = Op0.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry0(Op0, Ty0);
+  Entry0.IsSExt = true;
+  Entry0.IsZExt = false;
+  Args.push_back(Entry0);
+
+  // Second operand (unsigned)
+  SDValue Op1 = Op.getOperand(2);
+  Type *Ty1 = Op1.getValueType().getTypeForEVT(*DAG.getContext());
+  TargetLowering::ArgListEntry Entry1(Op1, Ty1);
+  Entry1.IsSExt = false;
+  Entry1.IsZExt = true;
+  Args.push_back(Entry1);
+
+  SDValue Callee = DAG.getExternalSymbol("__mulhsu64_soft",
+                                        getPointerTy(DAG.getDataLayout()));
+
+  Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
+
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(DL)
+     .setChain(DAG.getEntryNode())
+     .setLibCallee(CallingConv::C, RetTy, Callee, std::move(Args));
+
+  std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+  return CallResult.first;
 }
 
 SDValue RISCVTargetLowering::lowerToScalableOp(SDValue Op,

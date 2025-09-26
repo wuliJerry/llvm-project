@@ -38,6 +38,9 @@ def MULHSU  : ALU_rr<0b0000001, 0b010, "mulhsu">,
               Sched<[WriteIMul, ReadIMul, ReadIMul]>;
 def MULHU   : ALU_rr<0b0000001, 0b011, "mulhu", Commutable=1>,
               Sched<[WriteIMul, ReadIMul, ReadIMul]>;
+
+def : Pat<(int_riscv_mulhsu GPR:$rs1, GPR:$rs2),
+              (MULHSU GPR:$rs1, GPR:$rs2)>;
 } // Predicates = [HasStdExtZmmul]
 
 let Predicates = [HasStdExtM] in {
@@ -49,6 +52,9 @@ def REM     : ALU_rr<0b0000001, 0b110, "rem">,
               Sched<[WriteIRem, ReadIRem, ReadIRem]>;
 def REMU    : ALU_rr<0b0000001, 0b111, "remu">,
               Sched<[WriteIRem, ReadIRem, ReadIRem]>;
+
+def : Pat<(int_riscv_mulhsu GPR:$rs1, GPR:$rs2),
+              (MULHSU GPR:$rs1, GPR:$rs2)>;
 } // Predicates = [HasStdExtM]
 
 let Predicates = [HasStdExtZmmul, IsRV64], IsSignExtendingOpW = 1 in {
