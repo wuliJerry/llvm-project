@@ -7484,7 +7484,9 @@ SDValue RISCVTargetLowering::LowerOperation(SDValue Op,
   case ISD::INTRINSIC_WO_CHAIN: {
     unsigned IntNo = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
     if (IntNo == Intrinsic::riscv_mulhsu) {
-      return lowerMULHSU(Op, DAG);
+      if (!Subtarget.hasStdExtM() && !Subtarget.hasStdExtZmmul())
+        return lowerMULHSU(Op, DAG);
+      return SDValue();
     }
     return LowerINTRINSIC_WO_CHAIN(Op, DAG);
   }
