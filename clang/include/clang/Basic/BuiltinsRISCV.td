@@ -19,6 +19,7 @@ class RISCVBuiltin<string prototype, string features = ""> : TargetBuiltin {
 }
 
 let Attributes = [NoThrow, Const] in {
+def mulhsu : RISCVBuiltin<"int64_t(int64_t, uint64_t)", "64bit">;
 //===----------------------------------------------------------------------===//
 // Zbb extension.
 //===----------------------------------------------------------------------===//
